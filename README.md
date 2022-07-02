@@ -12,6 +12,7 @@ One of the players is controling flight direction of his ship with w-s-a-d keys 
 ## Under Development
 
 Please mind that this is an on-going project being just one of a few side project of an otherwise very busy single developer.
+Tcp client and server mechanism is under development but you can connect to test server using server_test.py script.
 
 ## Configuration
 
