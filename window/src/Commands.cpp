@@ -9,6 +9,8 @@ namespace  {
     class PlayerCommand: public GameCommand {
     public:
         void execute(GameplayState& state) override {
+            if (state.players.size() < issuerId + 1)
+                return;
             auto player = state.players.at(issuerId);
             if (player != nullptr)
                 execOnPlayer(*player);
