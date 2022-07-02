@@ -19,37 +19,7 @@
 #include <deque>
 #include "Commands.h"
 #include "Channel.h"
-
-class GameplayState: public GameState {
-public:
-
-    virtual ~GameplayState() =default;
-
-    void addSprite(std::shared_ptr<DynamicSprite> sprite) override {
-        sprites.push_back(sprite);
-    }
-
-    void addPlayer(std::shared_ptr<Player> player) override {
-        player->id = static_cast<unsigned>(players.size());
-        players.push_back(player);
-    }
-
-    void reset() override {
-        sprites.clear();
-        players.clear();
-    }
-
-    std::shared_ptr<Player> getPlayer(unsigned id) const override {
-        if (players.size() <= id)
-            return nullptr;
-        return players.at(id);
-    }
-
-    std::list<std::shared_ptr<DynamicSprite>> sprites;
-    std::vector<std::shared_ptr<Player>> players;
-
-
-};
+#include "GameplayState.h"
 
 struct Game::GameImpl {
     void updateSprites(float dt);
@@ -59,7 +29,7 @@ struct Game::GameImpl {
     void constructWorld(Loader& loader);
     void draw(Renderer& render);
     void createBoom(const DynamicSprite& target, const DynamicSprite& proj);
-    std::string gameStateBuffer;
+    std::string gameStateBuffer; // easier to debug using string but can be binary in the future
     void updateBuffer(const DynamicSprite& sprite);
     void readRemoteMessages();
     void sendState(float dt);

@@ -1,5 +1,5 @@
 #include "Commands.h"
-#include "Game.h"
+#include "GameplayState.h"
 #include "Loader.h"
 #include "LaserSprite.h"
 #include <unordered_map>
@@ -8,8 +8,8 @@ namespace  {
 
     class PlayerCommand: public GameCommand {
     public:
-        void execute(GameState& state) override {
-            auto player = state.getPlayer(issuerId);
+        void execute(GameplayState& state) override {
+            auto player = state.players.at(issuerId);
             if (player != nullptr)
                 execOnPlayer(*player);
         }
@@ -91,17 +91,17 @@ namespace  {
                       std::shared_ptr<LaserSprite> laserProto):
             shipPrototype(std::move(shipProto)), laserPrototype(laserProto){}
 
-        void execute(GameState& state) override {
-            state.addSprite(createFromPrototype(state));
+        void execute(GameplayState& state) override {
+            state.sprites.push_back(createFromPrototype(state));
         }
 
-        std::shared_ptr<StarshipSprite> createFromPrototype(GameState& state){
+        std::shared_ptr<StarshipSprite> createFromPrototype(GameplayState& state){
             auto ship = std::make_shared<StarshipSprite>(*shipPrototype);
 
             ship->getWeapon().subscribe([&state, this](const FireEvent& event){
                 auto laser = std::make_shared<LaserSprite>(*laserPrototype);
                 laser->activate(event.pos, event.velo, event.ttl);
-                state.addSprite(laser);
+                state.sprites.push_back(laser);
             });
             return ship;
         }
@@ -117,11 +117,12 @@ namespace  {
 
         CreatePlayerCmd(std::shared_ptr<CreateShipCmd> next): next(next){}
 
-        void execute(GameState& state) override {
+        void execute(GameplayState& state) override {
             auto player = std::make_shared<Player>();
-            state.addPlayer(player);
+            player->id = static_cast<unsigned>(state.players.size());
+            state.players.push_back(player);
             auto ship = next->createFromPrototype(state);
-            state.addSprite(ship);
+            state.sprites.push_back(ship);
             player->sprite = std::weak_ptr<StarshipSprite>(ship);
         }
 
@@ -134,8 +135,9 @@ namespace  {
 
         RestartGame(std::shared_ptr<CreateShipCmd> next): CreatePlayerCmd(next) {}
 
-        void execute(GameState& state) override {
-            state.reset();
+        void execute(GameplayState& state) override {
+            state.sprites.clear();
+            state.players.clear();
             CreatePlayerCmd::execute(state);
         }
 

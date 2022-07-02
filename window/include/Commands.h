@@ -6,14 +6,15 @@
 #include "io.h"
 
 
-class Player;
+struct Player;
 class SpriteFactory;
-class GameState;
+struct GameplayState;
+
 
 class GameCommand {
 public:
     virtual ~GameCommand() = default;
-    virtual void execute(GameState& state) =0;
+    virtual void execute(GameplayState& state) =0;
 };
 
 class CommandFactory {
