@@ -47,6 +47,7 @@ namespace  {
 
         std::string read() override {
             const auto msg = readQueue.front();
+            std::cout << msg << std::endl;
             readQueue.pop();
             return msg;
         }
@@ -64,42 +65,48 @@ namespace  {
 }
 
 struct tcp_connection::tcp_connection_impl {
-
+    std::shared_ptr<tcp::socket> tcp_socket;
     static const int max_length = 1024;
     char output_buffer[max_length];
+    char input_buffer[max_length];
     bool alive = false;
-    std::shared_ptr<conrete_msg_channel> channel;
-    tcp::socket tcp_socket;
-    std::string input_buffer;
+    std::vector<std::string> pingpong{"server_ping", "server_pong"};
+    std::vector<std::string>::size_type counter = 0;
 
-    tcp_connection_impl(boost::asio::io_context& io_context): tcp_socket(io_context) {
-        channel = std::make_shared<conrete_msg_channel>();
+    tcp_connection_impl(boost::asio::io_context& io_context) {
+        tcp_socket = std::make_shared<tcp::socket>(io_context);
     }
 
-    void handle_read(const boost::system::error_code& err, size_t bytes_transferred) {
-      if (!err) {
-           channel->readQueue.push(std::string(output_buffer, bytes_transferred));
-           std::cout << "read:" << output_buffer << std::endl;
+    tcp_connection_impl(std::shared_ptr<tcp::socket> tcp_socket) {
+        this->tcp_socket = tcp_socket;
+    }
+
+    void handle_read(const boost::system::error_code& error, size_t bytes_transferred) {
+      if (!error.value()) {
+           auto data = std::string(output_buffer, bytes_transferred);
+           std::cout << "read:" << data << std::endl;
       } else {
-           std::cerr << "read error: " << err.value() << ":" << err.message() << std::endl;
-           tcp_socket.close();
+           std::cerr << "read error: " << error.value() << ":" << error.message() << std::endl;
+           tcp_socket->close();
            alive = false;
       }
+      make_write();
     }
 
-    void handle_write(const boost::system::error_code& err, size_t) {
-      if (!err) {
-          if (!channel->writeQueue.empty())
-              make_write();
+    void handle_write(const boost::system::error_code& error, size_t bytes_transferred) {
+      if (!error.value()) {
+          auto data = std::string(input_buffer, bytes_transferred);
+          std::cout << "write:" << data << std::endl;
       } else {
-         std::cerr << "write error: " << err.value() << ":" << err.message() << std::endl;
-         tcp_socket.close();
+         std::cerr << "write error: " << error.value() << ":" << error.message() << std::endl;
+         tcp_socket->close();
          alive = false;
       }
+      make_read();
     }
 
     void make_read(){
-        tcp_socket.async_read_some(
+        tcp_socket->async_read_some(
             boost::asio::buffer(output_buffer, max_length),
             boost::bind(&tcp_connection_impl::handle_read,
                         this,
@@ -108,11 +115,10 @@ struct tcp_connection::tcp_connection_impl {
     }
 
     void make_write() {
-        if (channel->writeQueue.empty())
-            return;
-        input_buffer = channel->writeQueue.front();
-        channel->writeQueue.pop();
-        tcp_socket.async_write_some(
+        std::string msg = pingpong.at(counter);
+        counter = (counter + 1) % 2;
+        strcpy(input_buffer, msg.substr(0, max_length).c_str());
+        tcp_socket->async_write_some(
             boost::asio::buffer(input_buffer, max_length),
             boost::bind(&tcp_connection_impl::handle_write,
                       this,
@@ -126,31 +132,29 @@ tcp_connection::pointer tcp_connection::create(boost::asio::io_context& io_conte
     return tcp_connection::pointer(new tcp_connection(io_context));
 }
 
-tcp_connection::tcp_connection(boost::asio::io_context& io_context): impl(new tcp_connection_impl(io_context)) {}
+tcp_connection::pointer tcp_connection::create(std::shared_ptr<boost::asio::ip::tcp::socket> tcp_socket) {
+    return tcp_connection::pointer(new tcp_connection(tcp_socket));
+}
+
+tcp_connection::tcp_connection(boost::asio::io_context& io_context):
+    impl(new tcp_connection_impl(io_context)) {}
+
+tcp_connection::tcp_connection(std::shared_ptr<boost::asio::ip::tcp::socket> tcp_socket):
+    impl(new tcp_connection_impl(tcp_socket)) {}
 
 tcp_connection::~tcp_connection(){
     delete impl;
 }
 
 boost::asio::ip::tcp::socket& tcp_connection::socket() {
-   return impl->tcp_socket;
+   return *impl->tcp_socket;
 }
 
 void tcp_connection::start() {
     impl->alive = true;
-    impl->input_buffer = "!!!";
-    update();
-}
-
-void tcp_connection::update() {
-    impl->make_read();
     impl->make_write();
 }
 
 bool tcp_connection::is_alive() const {
     return impl->alive;
-}
-
-std::shared_ptr<message_channel> tcp_connection::get_channel() const {
-    return impl->channel;
 }

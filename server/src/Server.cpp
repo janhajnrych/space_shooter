@@ -18,7 +18,7 @@ struct tcp_server::tcp_server_impl {
 
    void init(){
        io_context = std::make_unique<boost::asio::io_context>();
-       acceptor = std::make_unique<tcp::acceptor>(*io_context, tcp::endpoint(tcp::v4(), 65432));
+       acceptor = std::make_unique<tcp::acceptor>(*io_context, tcp::endpoint(tcp::v4(), 65432), true);
    }
 
    std::unique_ptr<boost::asio::io_context> io_context;
@@ -26,12 +26,12 @@ struct tcp_server::tcp_server_impl {
    std::vector<tcp_connection::pointer> connections;
    std::deque<tcp_connection::pointer> waiting_conns;
    std::mutex mutex;
-   std::optional<channel_callback> on_new_connection_callback;
 
-   void run(){
+   void start(){
       init();
       start_accept();
       io_context->run();
+      loop_in_thread();
    }
 
    void start_accept() {
@@ -47,7 +47,39 @@ struct tcp_server::tcp_server_impl {
          new_connection->start();
          waiting_conns.push_back(new_connection);
        }
-       start_accept();
+   }
+
+   void check_connections(){
+       while (!waiting_conns.empty()) {
+           auto connection = waiting_conns.front();
+           connections.push_back(connection);
+           waiting_conns.pop_front();
+       }
+       connections.erase(std::remove_if(connections.begin(),
+                               connections.end(),
+                               [](tcp_connection::pointer conn_ptr){return !conn_ptr->is_alive();}),
+                               connections.end());
+   }
+
+   void loop_in_thread() {
+       try {
+         auto t = boost::thread([this]() {
+             loop();
+         });
+         t.detach();
+       }
+       catch (std::exception& e) {
+         std::cerr << e.what() << std::endl;
+       }
+   }
+
+   void loop() {
+       mutex.lock();
+       check_connections();
+       mutex.unlock();
+       using namespace std::chrono_literals;
+       std::this_thread::sleep_for(200ms);
+       loop();
    }
 
 };
@@ -59,40 +91,13 @@ tcp_server::~tcp_server(){
 }
 
 void tcp_server::start() {
-  try {
-    auto t = boost::thread([this]() {
-        impl->run();
-    });
-    t.detach();
-  }
-  catch (std::exception& e) {
-    std::cerr << e.what() << std::endl;
-  }
+    impl->start();
 }
 
-void tcp_server::update() {
-    const std::lock_guard<std::mutex> lock(impl->mutex);
-    while (!impl->waiting_conns.empty()){
-        auto connection = impl->waiting_conns.front();
-        impl->connections.push_back(connection);
-        impl->waiting_conns.pop_front();
-        if (impl->on_new_connection_callback.has_value()){
-            auto channel = connection->get_channel();
-            impl->on_new_connection_callback.value()(channel);
-        }
-    }
-    impl->connections.erase(std::remove_if(impl->connections.begin(),
-                            impl->connections.end(),
-                            [](tcp_connection::pointer conn_ptr){return !conn_ptr->is_alive();}),
-                            impl->connections.end());
-    for (auto conn : impl->connections){
-        conn->update();
+void tcp_server::wait() {
+    while(true) {
+        std::this_thread::yield();
     }
 }
-
-void tcp_server::on_new_connection(channel_callback callback) {
-    impl->on_new_connection_callback = callback;
-}
-
 
 

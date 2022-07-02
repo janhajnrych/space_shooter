@@ -49,4 +49,8 @@ glm::vec2 Animation::getVelo() const {
     return velocity;
 }
 
+bool Animation::isTrackable() const {
+    return false;
+}
+
 

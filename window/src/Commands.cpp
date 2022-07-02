@@ -2,6 +2,7 @@
 #include "Game.h"
 #include "Loader.h"
 #include "LaserSprite.h"
+#include <unordered_map>
 
 namespace  {
 
@@ -128,10 +129,10 @@ namespace  {
         std::shared_ptr<CreateShipCmd> next;
     };
 
-    class CreateFirstPlayerCmd: public CreatePlayerCmd {
+    class RestartGame: public CreatePlayerCmd {
     public:
 
-        CreateFirstPlayerCmd(std::shared_ptr<CreateShipCmd> next): CreatePlayerCmd(next) {}
+        RestartGame(std::shared_ptr<CreateShipCmd> next): CreatePlayerCmd(next) {}
 
         void execute(GameState& state) override {
             state.reset();
@@ -153,59 +154,81 @@ namespace  {
 
 }
 
-CommandFactory::CommandFactory(std::shared_ptr<SpriteFactory> spriteFactory){
-    auto releaseAcceleration = std::make_shared<EngineCommand>(0);
-    auto releaseSteering = std::make_shared<SteerCommand>(0);
-    auto speedUp = std::make_shared<EngineCommand>(StarshipSprite::maxThrust);
-    auto slowDown = std::make_shared<EngineCommand>(-StarshipSprite::maxThrust);
-    auto turnLeft = std::make_shared<SteerCommand>(StarshipSprite::maxTorque);
-    auto turnRight = std::make_shared<SteerCommand>(-StarshipSprite::maxTorque);
-    auto openFire = std::make_shared<GunCommand>(StarshipSprite::maxFireRate);
-    auto holdFire = std::make_shared<GunCommand>(0);
+struct CommandFactory::CommandFactoryImpl {
 
-    keyToCmd[KeyEvent{ActionKey_t::Up, State_t::Released}] = releaseAcceleration;
-    keyToCmd[KeyEvent{ActionKey_t::Down, State_t::Released}] = releaseAcceleration;
-    keyToCmd[KeyEvent{ActionKey_t::Left, State_t::Released}] = releaseSteering;
-    keyToCmd[KeyEvent{ActionKey_t::Right, State_t::Released}] = releaseSteering;
-    keyToCmd[KeyEvent{ActionKey_t::Fire, State_t::Released}] = holdFire;
-    keyToCmd[KeyEvent{ActionKey_t::Up, State_t::Pressed}] = speedUp;
-    keyToCmd[KeyEvent{ActionKey_t::Down, State_t::Pressed}] = slowDown;
-    keyToCmd[KeyEvent{ActionKey_t::Left, State_t::Pressed}] = turnLeft;
-    keyToCmd[KeyEvent{ActionKey_t::Right, State_t::Pressed}] = turnRight;
-    keyToCmd[KeyEvent{ActionKey_t::Fire, State_t::Pressed}] = openFire;
+    struct KeyEventHashFunction {
+      size_t operator()(const KeyEvent& event) const {
+        size_t rowHash = std::hash<int>()(event.key);
+        size_t colHash = std::hash<int>()(event.state) << 1;
+        return rowHash ^ colHash;
+      }
+    };
+    std::unordered_map<KeyEvent, std::shared_ptr<GameCommand>, KeyEventHashFunction> keyToCmd;
+    std::unordered_map<std::string, std::shared_ptr<GameCommand>> msgToCmd;
 
-    auto [crTieCmd, crTieCmdOther] = buildShipCommands(*spriteFactory, SpriteFactory::Sprite_t::tie_s);
-    keyToCmd[KeyEvent{ActionKey_t::StartY, State_t::Pressed}] = std::make_shared<CreateFirstPlayerCmd>(crTieCmd);
-    keyToCmd[KeyEvent{ActionKey_t::StartX, State_t::Released}] = std::make_shared<CreatePlayerCmd>(crTieCmdOther);
+    CommandFactoryImpl(std::shared_ptr<SpriteFactory> spriteFactory) {
 
-    auto [crXCmd, crXCmdOther] = buildShipCommands(*spriteFactory, SpriteFactory::Sprite_t::xWing_s);
-    keyToCmd[KeyEvent{ActionKey_t::StartX, State_t::Pressed}] = std::make_shared<CreateFirstPlayerCmd>(crXCmd);
-    keyToCmd[KeyEvent{ActionKey_t::StartY, State_t::Released}] = std::make_shared<CreatePlayerCmd>(crXCmdOther);
+        auto releaseAcceleration = std::make_shared<EngineCommand>(0);
+        auto releaseSteering = std::make_shared<SteerCommand>(0);
+        auto speedUp = std::make_shared<EngineCommand>(StarshipSprite::maxThrust);
+        auto slowDown = std::make_shared<EngineCommand>(-StarshipSprite::maxThrust);
+        auto turnLeft = std::make_shared<SteerCommand>(StarshipSprite::maxTorque);
+        auto turnRight = std::make_shared<SteerCommand>(-StarshipSprite::maxTorque);
+        auto openFire = std::make_shared<GunCommand>(StarshipSprite::maxFireRate);
+        auto holdFire = std::make_shared<GunCommand>(0);
 
-    msgToCmd["w0"] = releaseAcceleration->withTarget(1);
-    msgToCmd["s0"] = releaseAcceleration->withTarget(1);
-    msgToCmd["a0"] = releaseSteering->withTarget(1);
-    msgToCmd["d0"] = releaseSteering->withTarget(1);
-    msgToCmd["k0"] = holdFire->withTarget(1);
-    msgToCmd["w1"] = speedUp->withTarget(1);
-    msgToCmd["s1"] = slowDown->withTarget(1);
-    msgToCmd["a1"] = turnLeft->withTarget(1);
-    msgToCmd["d1"] = turnRight->withTarget(1);
-    msgToCmd["k1"] = openFire->withTarget(1);
-    //msgToCmd["t1"] = keyToCmd[KeyEvent{ActionKey_t::StartY, State_t::Pressed}];
-    //msgToCmd["t0"] = keyToCmd[KeyEvent{ActionKey_t::StartY, State_t::Released}];
-    //msgToCmd["y1"] = keyToCmd[KeyEvent{ActionKey_t::StartX, State_t::Pressed}];
-    //msgToCmd["y0"] = keyToCmd[KeyEvent{ActionKey_t::StartX, State_t::Released}];
-}
+        keyToCmd[KeyEvent{ActionKey_t::Up, State_t::Released}] = releaseAcceleration;
+        keyToCmd[KeyEvent{ActionKey_t::Down, State_t::Released}] = releaseAcceleration;
+        keyToCmd[KeyEvent{ActionKey_t::Left, State_t::Released}] = releaseSteering;
+        keyToCmd[KeyEvent{ActionKey_t::Right, State_t::Released}] = releaseSteering;
+        keyToCmd[KeyEvent{ActionKey_t::Fire, State_t::Released}] = holdFire;
+        keyToCmd[KeyEvent{ActionKey_t::Up, State_t::Pressed}] = speedUp;
+        keyToCmd[KeyEvent{ActionKey_t::Down, State_t::Pressed}] = slowDown;
+        keyToCmd[KeyEvent{ActionKey_t::Left, State_t::Pressed}] = turnLeft;
+        keyToCmd[KeyEvent{ActionKey_t::Right, State_t::Pressed}] = turnRight;
+        keyToCmd[KeyEvent{ActionKey_t::Fire, State_t::Pressed}] = openFire;
+
+        auto [crTCmd, crTCmdOther] = buildShipCommands(*spriteFactory, SpriteFactory::Sprite_t::tie_s);
+        keyToCmd[KeyEvent{ActionKey_t::StartT, State_t::Pressed}] = std::make_shared<RestartGame>(crTCmd);
+        keyToCmd[KeyEvent{ActionKey_t::StartX, State_t::Released}] = std::make_shared<CreatePlayerCmd>(crTCmdOther);
+
+        auto [crXCmd, crXCmdOther] = buildShipCommands(*spriteFactory, SpriteFactory::Sprite_t::xWing_s);
+        keyToCmd[KeyEvent{ActionKey_t::StartX, State_t::Pressed}] = std::make_shared<RestartGame>(crXCmd);
+        keyToCmd[KeyEvent{ActionKey_t::StartT, State_t::Released}] = std::make_shared<CreatePlayerCmd>(crXCmdOther);
+
+        msgToCmd["w0"] = releaseAcceleration->withTarget(1);
+        msgToCmd["s0"] = releaseAcceleration->withTarget(1);
+        msgToCmd["a0"] = releaseSteering->withTarget(1);
+        msgToCmd["d0"] = releaseSteering->withTarget(1);
+        msgToCmd["k0"] = holdFire->withTarget(1);
+        msgToCmd["w1"] = speedUp->withTarget(1);
+        msgToCmd["s1"] = slowDown->withTarget(1);
+        msgToCmd["a1"] = turnLeft->withTarget(1);
+        msgToCmd["d1"] = turnRight->withTarget(1);
+        msgToCmd["k1"] = openFire->withTarget(1);
+        msgToCmd["t1"] = keyToCmd[KeyEvent{ActionKey_t::StartT, State_t::Pressed}];
+        msgToCmd["t0"] = keyToCmd[KeyEvent{ActionKey_t::StartX, State_t::Released}];
+        msgToCmd["x1"] = keyToCmd[KeyEvent{ActionKey_t::StartX, State_t::Pressed}];
+        msgToCmd["x0"] = keyToCmd[KeyEvent{ActionKey_t::StartT, State_t::Released}];
+    }
+};
+
+
+
+CommandFactory::CommandFactory(std::shared_ptr<SpriteFactory> spriteFactory): impl(new CommandFactoryImpl(spriteFactory)){}
 
 std::shared_ptr<GameCommand> CommandFactory::create(const KeyEvent& event) const {
-    if (keyToCmd.count(event) == 0)
+    if (impl->keyToCmd.count(event) == 0)
         return nullptr;
-    return keyToCmd.at(event);
+    return impl->keyToCmd.at(event);
 }
 
 std::shared_ptr<GameCommand> CommandFactory::create(const std::string& message) const {
-    if (msgToCmd.count(message) == 0)
+    if (impl->msgToCmd.count(message) == 0)
         return nullptr;
-    return msgToCmd.at(message);
+    return impl->msgToCmd.at(message);
+}
+
+CommandFactory::~CommandFactory() {
+    delete impl;
 }

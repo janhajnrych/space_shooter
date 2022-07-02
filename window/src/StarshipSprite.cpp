@@ -128,4 +128,8 @@ glm::vec2 StarshipSprite::getVelo() const {
     return velocity;
 }
 
+bool StarshipSprite::isTrackable() const {
+    return true;
+}
+
 

@@ -36,6 +36,7 @@ public:
     void die();
     void hit();
     std::string serialize() const;
+    bool isTrackable() const override;
 private:
     std::shared_ptr<Shader> shader;
     std::shared_ptr<Texture> texture;

@@ -14,7 +14,6 @@ class StarshipSprite;
 
 struct Player {
     std::weak_ptr<StarshipSprite> sprite;
-    std::weak_ptr<message_channel> channel;
     unsigned id;
     unsigned score = 0;
     //~Player();

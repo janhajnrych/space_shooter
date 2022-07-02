@@ -26,6 +26,7 @@ public:
     glm::vec2 getPos() const override;
     glm::vec2 getVelo() const override;
     void die();
+    bool isTrackable() const override;
 private:
     std::shared_ptr<Shader> shader;
     std::shared_ptr<Texture> texture;

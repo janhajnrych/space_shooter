@@ -3,7 +3,7 @@
 #include "Events.h"
 
 enum ActionKey_t {
-    Up, Down, Left, Right, Fire, Close, StartX, StartY
+    Up, Down, Left, Right, Fire, Close, StartX, StartT
 };
 
 enum State_t {

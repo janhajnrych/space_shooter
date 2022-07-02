@@ -29,6 +29,7 @@ public:
     glm::vec2 getPos() const override;
     bool isPointInside(const glm::vec2& pos) const override;
     glm::vec2 getVelo() const override;
+    bool isTrackable() const override;
 protected:
     std::vector<std::shared_ptr<Texture>> textures;
     std::shared_ptr<Shader> shader;

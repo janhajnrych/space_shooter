@@ -17,7 +17,7 @@ public:
         {GLFW_KEY_K, ActionKey_t::Fire},
         {GLFW_KEY_ESCAPE, ActionKey_t::Close},
         {GLFW_KEY_Y, ActionKey_t::StartX},
-        {GLFW_KEY_T, ActionKey_t::StartY}
+        {GLFW_KEY_T, ActionKey_t::StartT}
 
     };
 

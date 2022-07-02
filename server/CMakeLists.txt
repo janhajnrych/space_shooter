@@ -8,8 +8,12 @@ discover_headers(include header_list)
 discover_cpp(src src_list)
 find_package(Boost REQUIRED system thread)
 set(IMPORTED_LIBS "Boost::thread")
+
 add_library(${PROJECT_NAME} ${src_list} ${header_list})
 target_link_libraries(${PROJECT_NAME} ${IMPORTED_LIBS})
+
+add_executable(${PROJECT_NAME}exe ${src_list} ${header_list})
+target_link_libraries(${PROJECT_NAME}exe ${IMPORTED_LIBS})
 
 
 

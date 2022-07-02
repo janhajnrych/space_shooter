@@ -61,4 +61,8 @@ void LaserSprite::die() {
     timeToLive = 0;
 }
 
+bool LaserSprite::isTrackable() const {
+    return false;
+}
+
 

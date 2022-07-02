@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.0)
-set(PROJECT_NAME window)
+set(PROJECT_NAME windowexe)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

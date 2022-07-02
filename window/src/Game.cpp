@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include "LaserSprite.h"
 #include "Animation.h"
-#include "Server.h"
+#include "Client.h"
 #include <deque>
 #include "Commands.h"
 #include "Channel.h"
@@ -54,22 +54,25 @@ public:
 struct Game::GameImpl {
     void updateSprites(float dt);
     void execCommands();
-    void communicateWithClients();
     void checkCollision(std::shared_ptr<DynamicSprite> sprite);
-    void startServer();
+    void connectToServer();
     void constructWorld(Loader& loader);
     void draw(Renderer& render);
     void createBoom(const DynamicSprite& target, const DynamicSprite& proj);
+    std::string gameStateBuffer;
+    void updateBuffer(const DynamicSprite& sprite);
+    void readRemoteMessages();
+    void sendState(float dt);
 
     std::shared_ptr<CommandFactory> commandFactory;
     std::shared_ptr<Sprite> background;
     std::shared_ptr<SpriteShader> shader;
-    std::unique_ptr<tcp_server> server;
+    std::unique_ptr<tcp_client> tcpClient;
     std::shared_ptr<SpriteFactory> spriteFactory;
     std::deque<std::shared_ptr<GameCommand>> commands;
     GameplayState state;
-    int commCounter = 0;
-    static const int COMMUNICATION_PERIOD = 30;
+    float commCounter = 0.0;
+    static constexpr float COMMUNICATION_PERIOD = 1.0;
 };
 
 void Game::GameImpl::execCommands() {
@@ -80,40 +83,48 @@ void Game::GameImpl::execCommands() {
     }
 }
 
-void Game::GameImpl::communicateWithClients() {
-    commCounter++;
-    if (commCounter % COMMUNICATION_PERIOD != 0)
-        return;
-    server->update();
-    for (auto player : state.players) {
-        if (player->channel.expired())
-            continue;
-        auto channel = player->channel.lock();
-        while (channel->has_data_to_read()) {
-            auto msg = channel->read();
-            auto cmd = commandFactory->create(msg);
-            if (cmd != nullptr)
-                commands.push_back(cmd);
-        }
-        if (player->sprite.expired())
-            continue;
-        auto msg = player->sprite.lock()->serialize();
-        channel->write("me:" + msg);
-        for (auto other : state.players) {
-            if (other == player)
-                continue;
-            auto msg = other->sprite.lock()->serialize();
-            channel->write("other:" + msg);
-        }
+void Game::GameImpl::readRemoteMessages() {
+    while (tcpClient->has_messages()){
+        auto msg = tcpClient->read();
+        auto cmd = commandFactory->create(msg);
+        if (cmd)
+          commands.push_back(cmd);
     }
 }
 
+void Game::GameImpl::sendState(float dt) {
+    if (commCounter > COMMUNICATION_PERIOD){
+        commCounter = 0.0;
+        if (gameStateBuffer.size() != 0) {
+            tcpClient->write(gameStateBuffer);
+        }
+    } else {
+      commCounter+= dt;
+    }
+}
+
+
+void Game::GameImpl::updateBuffer(const DynamicSprite& sprite) {
+    auto pos = sprite.getPos();
+    int x = static_cast<int>(pos.x * 1000);
+    int y = static_cast<int>(pos.y * 1000);
+    gameStateBuffer+= std::to_string(x) + "," + std::to_string(y) + ",";
+    auto velo = sprite.getVelo();
+    x = static_cast<int>(velo.x * 1000);
+    y = static_cast<int>(velo.y * 1000);
+    gameStateBuffer+= std::to_string(x) + "," + std::to_string(y) + ";";
+}
+
 void Game::GameImpl::updateSprites(float dt) {
+    gameStateBuffer = std::string();
     auto it = state.sprites.begin();
     while (it != state.sprites.end()) {
         auto spritePtr = (*it);
         if (spritePtr->isAlive()) {
             spritePtr->update(dt);
+            if (spritePtr->isTrackable()){
+                updateBuffer(*spritePtr);
+            }
             checkCollision(spritePtr);
             it++;
         } else {
@@ -145,18 +156,9 @@ void Game::GameImpl::checkCollision(std::shared_ptr<DynamicSprite> sprite) {
     }
 }
 
-void Game::GameImpl::startServer() {
-    server = std::make_unique<tcp_server>();
-    server->on_new_connection([this](std::shared_ptr<message_channel> channel_ptr){
-        if (this->state.players.size() != 0){
-            this->state.players.back()->channel = channel_ptr;
-        } else {
-            auto player = std::make_shared<Player>();
-            player->channel = channel_ptr;
-            state.players.push_back(player);
-        }
-    });
-    server->start();
+void Game::GameImpl::connectToServer() {
+    tcpClient = std::make_unique<tcp_client>();
+    tcpClient->start();
 }
 
 void Game::GameImpl::constructWorld(Loader& loader) {
@@ -166,14 +168,16 @@ void Game::GameImpl::constructWorld(Loader& loader) {
     commandFactory = std::make_shared<CommandFactory>(spriteFactory);
 }
 
-Game::Game(): impl(new GameImpl()) {}
+Game::Game(): impl(new GameImpl()) {
+    impl->gameStateBuffer.reserve(128);
+}
 
 bool Game::createRoom() {
     Loader loader;
     if (!loader.load())
         return false;
     impl->constructWorld(loader);
-    impl->startServer();
+    impl->connectToServer();
     return true;
 }
 
@@ -191,9 +195,10 @@ void Game::draw(Renderer& renderer) {
 }
 
 void Game::update(float dt) {
-  impl->communicateWithClients();
+  impl->readRemoteMessages();
   impl->execCommands();
   impl->updateSprites(dt);
+  impl->sendState(dt);
 }
 
 void Game::handleKey(const KeyEvent& keyEvent) {

@@ -23,6 +23,7 @@ public:
     virtual void update(float dt) =0;
     virtual bool isAlive() const =0;
     virtual bool isPointInside(const glm::vec2& pos) const =0;
+    virtual bool isTrackable() const =0;
 };
 
 class BackgroundTile: public Sprite {
