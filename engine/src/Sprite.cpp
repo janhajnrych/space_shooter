@@ -6,7 +6,7 @@
 #include "Shader.h"
 #include "Renderer.h"
 
-glm::mat4 DynamicSprite::buildTransform(const glm::vec2& pos, float rotation, const glm::vec2& size) {
+glm::mat4 Sprite::buildTransform(const glm::vec2& pos, float rotation, const glm::vec2& size) {
     glm::mat4 transform = glm::mat4(1.0f);
     transform = glm::translate(transform, glm::vec3(pos.x, pos.y, 0.0f));
     transform = glm::rotate(transform, rotation, glm::vec3(0.0f, 0.0f, 1.0f));

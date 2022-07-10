@@ -5,24 +5,24 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <memory>
 #include "Sprite.h"
+#include "Team.h"
 
-class StarshipSprite;
-class LaserSprite;
+class DynamicObject;
+class TeamObject;
+class AbstractObjectSprite;
+class EvolvingObject;
 class Background;
 class SpriteShader;
 class Animation;
+class StarshipObject;
+class LaserObject;
 
 class SpriteFactory {
 public:
-    enum Sprite_t {
-        xWing_s,
-        tie_s
-    };
-   virtual std::unique_ptr<StarshipSprite> createStarship(Sprite_t type, const glm::vec2& pos, float rot=0) const =0;
-   virtual std::unique_ptr<LaserSprite> createLaser(Sprite_t type) const =0;
    virtual std::unique_ptr<BackgroundTile> createBackground(float scale) const =0;
-   virtual std::unique_ptr<Animation> createExplosion(const glm::vec2& pos, const glm::vec2& velo) const =0;
-
+   virtual std::shared_ptr<Animation> createExplosion(const glm::vec2& pos, const glm::vec2& velo) const =0;
+   virtual std::shared_ptr<AbstractObjectSprite> createShipSprite(std::shared_ptr<StarshipObject> ship) const =0;
+   virtual std::unique_ptr<AbstractObjectSprite> createLaserSprite(std::shared_ptr<TeamObject> laser) const =0;
 };
 
 class Loader

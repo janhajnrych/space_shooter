@@ -3,15 +3,19 @@
 #include <iostream>
 #include <unordered_map>
 #include "SpriteShader.h"
-#include "StarshipSprite.h"
 #include "Game.h"
 #include "Texture.h"
 #include <unordered_map>
-#include "LaserSprite.h"
-#include <filesystem>
 #include "Animation.h"
 #include <tuple>
 #include <fstream>
+#include <algorithm>
+#include "ObjectSprite.h"
+#include "EvolvingObject.h"
+#include "Starship.h"
+#include "Boom.h"
+#include <glm/glm.hpp>
+#include <filesystem>
 
 namespace  {
 
@@ -29,19 +33,22 @@ namespace  {
         DynamicSpriteFactory(std::unordered_map<Texture_t, std::shared_ptr<Texture>>&& textureMap,
                              std::unordered_map<Texture_t, std::vector<std::shared_ptr<Texture>>>&& animationMap,
                              std::shared_ptr<SpriteShader> spriteShader):
-            textureMap(textureMap), animationMap(animationMap), spriteShader(spriteShader){
+            textureMap(textureMap), animationMap(animationMap), spriteShader(spriteShader) {
         }
 
         virtual ~DynamicSpriteFactory() = default;
 
-        std::unique_ptr<StarshipSprite> createStarship(Sprite_t typeId, const glm::vec2& pos, float rot=0) const override {
-            return std::make_unique<StarshipSprite>(spriteShader, textureMap.at(shipTextures.at(typeId)),
-                                                    shipSize, pos, rot);
+        std::shared_ptr<AbstractObjectSprite> createShipSprite(std::shared_ptr<StarshipObject> ship) const override {
+            auto team = ship->getTeam();
+            auto txId = shipTextures.at(team);
+            auto texture = textureMap.at(txId);
+            return std::make_shared<ColoredObjectSprite>(spriteShader, texture, ship, noColor);
         }
 
-        std::unique_ptr<LaserSprite> createLaser(Sprite_t typeId) const override {
-            return std::make_unique<LaserSprite>(spriteShader, textureMap.at(laser_tx),
-                                                 laserSize, colors.at(typeId));
+        std::unique_ptr<AbstractObjectSprite> createLaserSprite(std::shared_ptr<TeamObject> laser) const override {
+            auto texture = textureMap.at(Texture_t::laser_tx);
+            auto team = laser->getTeam();
+            return std::make_unique<ColoredObjectSprite>(spriteShader, texture, laser, colors.at(team));
         }
 
         std::unique_ptr<BackgroundTile> createBackground(float nRepeatBg) const override {
@@ -51,29 +58,29 @@ namespace  {
             return std::make_unique<BackgroundTile>(tx, spriteShader, size);
         }
 
-        std::unique_ptr<Animation> createExplosion(const glm::vec2& pos, const glm::vec2& velo) const override {
-            return std::make_unique<Animation>(spriteShader, animationMap.at(boom_tx), boomSize, pos, velo, boomTtl,
-                                               glm::atan(velo.y, velo.x));
+        std::shared_ptr<Animation> createExplosion(const glm::vec2& pos, const glm::vec2& velo) const override {
+            auto boomObj = std::make_shared<BoomObject>(boomSize, pos, velo, boomTtl);
+            return std::make_shared<Animation>(spriteShader, animationMap.at(boom_tx), boomObj);
         }
 
     private:
-        const glm::vec2 shipSize = glm::vec2(0.075f, 0.075f);
         const glm::vec2 laserSize = glm::vec2(0.075f, 0.005f);
         const glm::vec2 boomSize = glm::vec2(0.05f, 0.05f);
+        const glm::vec4 noColor = glm::vec4(1,1,1,1);
 
-        std::unordered_map<Sprite_t, glm::vec4> colors = {
-            {xWing_s, glm::vec4(0,0,1,1)},
-            {tie_s, glm::vec4(1,0,0,1)}
+        const float boomTtl = 0.5f;
+
+        std::unordered_map<Team, glm::vec4> colors = {
+            {Team::Blue, glm::vec4(0,0,1,1)},
+            {Team::Red, glm::vec4(1,0,0,1)}
         };
-        std::unordered_map<Sprite_t, Texture_t> shipTextures = {
-            {xWing_s, xWing_tx},
-            {tie_s, tie_tx}
+        std::unordered_map<Team, Texture_t> shipTextures = {
+            {Team::Blue, xWing_tx},
+            {Team::Red, tie_tx}
         };
         std::unordered_map<Texture_t, std::shared_ptr<Texture>> textureMap;
         std::unordered_map<Texture_t, std::vector<std::shared_ptr<Texture>>> animationMap;
         std::shared_ptr<SpriteShader> spriteShader;
-
-        const float boomTtl = 0.5f;
     };
 
 }
@@ -84,13 +91,22 @@ struct Loader::LoaderImpl {
   using TxPtr = std::shared_ptr<Texture>;
   std::unordered_map<Texture_t, TxPtr> textureMap;
   std::unordered_map<Texture_t, std::vector<TxPtr>> animationTextureMap;
+  std::vector<std::tuple<std::string, Texture_t>> objectFilenames;
 
-  LoaderImpl() {}
+  LoaderImpl() {
+      objectFilenames = {
+          {"xwing.png", xWing_tx},
+          {"tie.png", tie_tx},
+          {"space.png", space_tx},
+          {"laser.png", laser_tx}
+      };
+      objectFilenames.shrink_to_fit();
+  }
 
-  std::vector<std::shared_ptr<Texture>> loadAlphabeticalyFromDir(const std::string& path){
-      using recursive_directory_iterator = std::filesystem::recursive_directory_iterator;
+  std::vector<std::shared_ptr<Texture>> loadAlphabeticalyFromDir(const std::filesystem::path& path){
       std::vector<std::tuple<std::string, std::shared_ptr<Texture>>> cache;
-      for (const auto& entry : recursive_directory_iterator(path.c_str())){
+      for (const auto& entry : std::filesystem::directory_iterator(path)) {
+          std::cout << entry.path().c_str() << std::endl;
           std::shared_ptr<Texture> tx = Texture::loadFromPath(entry.path().c_str());
           if (tx == nullptr)
               continue;
@@ -105,16 +121,14 @@ struct Loader::LoaderImpl {
       return textures;
   }
 
-  bool loadAssets(const std::string& dirPath){
+  bool loadAssets(const std::filesystem::path& dirPath){
       bool success = true;
-      textureMap[xWing_tx] = Texture::loadFromPath(dirPath + "xwing.png");
-      textureMap[tie_tx] = Texture::loadFromPath(dirPath + "tie.png");
-      textureMap[space_tx] = Texture::loadFromPath(dirPath + "space.png");
-      textureMap[laser_tx] = Texture::loadFromPath(dirPath + "laser.png");
-      auto frames = loadAlphabeticalyFromDir(dirPath + "boom");
+      for (const auto& entry : objectFilenames){
+        const std::filesystem::path filepath = std::get<0>(entry).c_str();
+        textureMap[std::get<1>(entry)] = Texture::loadFromPath(dirPath / filepath);
+      }
+      auto frames = loadAlphabeticalyFromDir(dirPath / std::filesystem::path("boom"));
       animationTextureMap[boom_tx] = std::vector<std::shared_ptr<Texture>>(frames);
-//      std::reverse(frames.begin(), frames.end());
-//      animationTextureMap[boom_tx].insert(animationTextureMap[boom_tx].end(), frames.begin()+1, frames.end());
       return success;
   }
 
@@ -132,12 +146,8 @@ struct Loader::LoaderImpl {
 Loader::Loader(): impl(new LoaderImpl()){}
 
 bool Loader::load() {
-    std::ifstream configFile("config.txt");
-    std::string line;
-    std::getline(configFile, line);  // we only need first line which should be asset directory path
-    if (line.size() == 0)
-        return false;
-    bool valid = impl->loadAssets(line);
+    auto assetDirPath = std::filesystem::current_path().parent_path() / std::filesystem::path("assets");
+    bool valid = impl->loadAssets(assetDirPath);
     valid&= impl->createShaders();
     return valid;
 }

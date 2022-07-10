@@ -12,51 +12,27 @@
 #include <boost/shared_ptr.hpp>
 #include <deque>
 #include <boost/thread.hpp>
+#include "Channel.h"
 
 using boost::asio::deadline_timer;
 using boost::asio::ip::tcp;
 
-namespace  {
-
-    template <class T>
-    class restricted_queue : protected std::deque<T> {
-    public:
-
-        T pull(){
-          auto return_value = std::deque<T>::front();
-          const std::lock_guard<std::mutex> lock(mutex);
-          std::deque<T>::pop_front();
-          return return_value;
-        }
-
-        bool is_empty() const {
-            return std::deque<T>::empty();
-        }
-
-        void push(const T& elem) {
-            const std::lock_guard<std::mutex> lock(mutex);
-            std::deque<T>::push_back(elem);
-        }
-
-    private:
-        std::mutex mutex;
-    };
-}
-
-struct tcp_client::tcp_client_impl {
+struct tcp_client::tcp_client_impl: public message_channel {
 
     static const int max_length = 1024;
     char output_buffer[max_length];
     char input_buffer[max_length];
-
-    restricted_queue<std::string> write_queue;
-    restricted_queue<std::string> read_queue;
+    constexpr static char delimiter = ';';
 
     boost::asio::io_context io_context;
     std::unique_ptr<boost::asio::ip::tcp::socket> socket;
 
     std::vector<char> heartbeat{'1', '0'};
     std::vector<std::string>::size_type counter = 0;
+
+    tcp_client_impl(){
+        heartbeat.shrink_to_fit();
+    }
 
     void start() {
         socket = std::make_unique<boost::asio::ip::tcp::socket>(io_context);
@@ -77,8 +53,10 @@ struct tcp_client::tcp_client_impl {
         if (error.value()){
             std::cerr << "write error " << error << std::endl;
         } else {
-            auto data = std::string(input_buffer, bytes_transferred);
-            //std::cout << "write:" << data << std::endl;
+//            auto data = std::string(input_buffer, bytes_transferred);
+//            auto sepId = data.find(delimiter);
+//            if (sepId != std::string::npos)
+//               std::cout << "write:" << data.substr(0, sepId) << delimiter << std::endl;
         }
     }
 
@@ -86,9 +64,13 @@ struct tcp_client::tcp_client_impl {
       if (error.value()){
             std::cerr << "read error " << error << std::endl;
       } else {
-          auto msg = std::string(output_buffer, bytes_transferred);
-          read_queue.push(msg);
-          //std::cout << "read: " << msg << std::endl;
+          auto data = std::string(output_buffer, bytes_transferred);
+          auto sepId = data.find(delimiter);
+          if (sepId != std::string::npos){
+              auto msg = data.substr(0, sepId);
+              read_queue.push(msg);
+          }
+
       }
     }
 
@@ -98,10 +80,10 @@ struct tcp_client::tcp_client_impl {
         io_context.reset();
         std::string msg = "";
         if (write_queue.is_empty()){
-            msg = std::string(1, heartbeat.at(counter));
+            msg = std::string(1, heartbeat.at(counter)) + delimiter;
             counter = (counter + 1) % 2;
         } else {
-            msg = write_queue.pull();
+            msg = write_queue.pull() + delimiter;
         }
         strcpy(input_buffer, msg.substr(0, max_length).c_str());
         socket->async_write_some(
@@ -143,7 +125,7 @@ struct tcp_client::tcp_client_impl {
         make_write();
         make_read();
         using namespace std::chrono_literals;
-        std::this_thread::sleep_for(50ms);
+        std::this_thread::sleep_for(10ms);
         loop();
     }
 };

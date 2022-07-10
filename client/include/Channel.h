@@ -10,8 +10,8 @@ class restricted_queue : protected std::deque<T> {
 public:
 
     T pull(){
-      auto return_value = std::deque<T>::front();
       const std::lock_guard<std::mutex> lock(mutex);
+      auto return_value = std::deque<T>::front();
       std::deque<T>::pop_front();
       return return_value;
     }
